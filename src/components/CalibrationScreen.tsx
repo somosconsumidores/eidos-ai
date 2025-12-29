@@ -3,20 +3,22 @@ import { useState } from "react";
 import { RefreshCw, Check, Sparkles, Sliders } from "lucide-react";
 
 interface CalibrationScreenProps {
-  onComplete: () => void;
+  onComplete: (iterations: number, archetype: "classic" | "editorial" | "natural") => void;
+  initialArchetype?: "classic" | "editorial" | "natural";
+  onOpenSettings: () => void;
 }
 
 const archetypes = [
-  { id: "classic", label: "Clássico", description: "Proporções áureas tradicionais" },
-  { id: "editorial", label: "Editorial", description: "Look de alta moda" },
-  { id: "natural", label: "Natural", description: "Realce sutil e orgânico" },
+  { id: "classic" as const, label: "Clássico", description: "Proporções áureas tradicionais" },
+  { id: "editorial" as const, label: "Editorial", description: "Look de alta moda" },
+  { id: "natural" as const, label: "Natural", description: "Realce sutil e orgânico" },
 ];
 
-const CalibrationScreen = ({ onComplete }: CalibrationScreenProps) => {
+const CalibrationScreen = ({ onComplete, initialArchetype = "natural", onOpenSettings }: CalibrationScreenProps) => {
   const [iterations, setIterations] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [selectedArchetype, setSelectedArchetype] = useState("natural");
-  const [showSettings, setShowSettings] = useState(false);
+  const [selectedArchetype, setSelectedArchetype] = useState<"classic" | "editorial" | "natural">(initialArchetype);
+  const [showLocalSettings, setShowLocalSettings] = useState(false);
 
   const handleUpdate = () => {
     if (isProcessing) return;
@@ -71,7 +73,7 @@ const CalibrationScreen = ({ onComplete }: CalibrationScreenProps) => {
           </p>
         </div>
         <button
-          onClick={() => setShowSettings(!showSettings)}
+          onClick={() => setShowLocalSettings(!showLocalSettings)}
           className="p-3 glass rounded-xl hover:bg-secondary/50 transition-colors"
         >
           <Sliders className="w-5 h-5 text-muted-foreground" />
@@ -80,7 +82,7 @@ const CalibrationScreen = ({ onComplete }: CalibrationScreenProps) => {
 
       {/* Settings panel */}
       <AnimatePresence>
-        {showSettings && (
+        {showLocalSettings && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
@@ -206,7 +208,7 @@ const CalibrationScreen = ({ onComplete }: CalibrationScreenProps) => {
           <motion.button
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            onClick={onComplete}
+            onClick={() => onComplete(iterations, selectedArchetype)}
             className="w-full py-4 glass rounded-2xl flex items-center justify-center gap-3 hover:bg-secondary/50 transition-colors"
           >
             <Check className="w-5 h-5 text-aurora-mid" />
