@@ -1,22 +1,55 @@
 import { motion } from "framer-motion";
-import { Camera, RotateCcw, Zap, Image } from "lucide-react";
+import { Camera, RotateCcw, Zap, Image, Settings } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
+import type { Photo, UserSettings } from "@/hooks/usePhotoStorage";
+import { getEidosFilter } from "@/hooks/usePhotoStorage";
 
 interface CameraScreenProps {
-  onCapture: () => void;
+  onCapture: (photo: Omit<Photo, "id" | "timestamp">) => void;
   onGallery: () => void;
+  settings: UserSettings;
+  onOpenSettings: () => void;
 }
 
-const CameraScreen = ({ onCapture, onGallery }: CameraScreenProps) => {
+const sampleImages = [
+  "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&h=1200&fit=crop&crop=face",
+  "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=800&h=1200&fit=crop&crop=face",
+  "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=800&h=1200&fit=crop&crop=face",
+];
+
+const CameraScreen = ({ onCapture, onGallery, settings, onOpenSettings }: CameraScreenProps) => {
   const [eidosMode, setEidosMode] = useState(true);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+
+  const currentImage = sampleImages[currentImageIndex];
+  const eidosFilter = getEidosFilter(settings.archetype, settings.iterations);
 
   const handleCapture = () => {
     setIsCapturing(true);
+    
+    // Flash effect and save
     setTimeout(() => {
+      const newPhoto: Omit<Photo, "id" | "timestamp"> = {
+        originalUrl: currentImage,
+        archetype: settings.archetype,
+        iterations: settings.iterations,
+        eidosMode,
+      };
+      
+      toast.success("Foto capturada!", {
+        description: `Arquétipo: ${settings.archetype}`,
+      });
+      
       setIsCapturing(false);
-      onCapture();
+      onCapture(newPhoto);
     }, 500);
+  };
+
+  const handleFlipCamera = () => {
+    setCurrentImageIndex((prev) => (prev + 1) % sampleImages.length);
+    toast("Câmera alternada", { icon: "🔄" });
   };
 
   return (
@@ -30,13 +63,11 @@ const CameraScreen = ({ onCapture, onGallery }: CameraScreenProps) => {
           transition={{ duration: 0.3 }}
         >
           <img
-            src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&h=1200&fit=crop&crop=face"
+            src={currentImage}
             alt="Camera preview"
             className="w-full h-full object-cover"
             style={{
-              filter: eidosMode
-                ? "brightness(1.05) contrast(1.05) saturate(1.1)"
-                : "none",
+              filter: eidosMode ? eidosFilter : "none",
               transform: eidosMode ? "scale(1.02)" : "scale(1)",
               transition: "all 0.5s ease",
             }}
@@ -64,6 +95,16 @@ const CameraScreen = ({ onCapture, onGallery }: CameraScreenProps) => {
               />
             </motion.div>
           )}
+
+          {/* Flash effect */}
+          {isCapturing && (
+            <motion.div
+              className="absolute inset-0 bg-white z-30"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: [0, 1, 0] }}
+              transition={{ duration: 0.3 }}
+            />
+          )}
         </motion.div>
 
         {/* Top controls */}
@@ -86,13 +127,34 @@ const CameraScreen = ({ onCapture, onGallery }: CameraScreenProps) => {
             </span>
           </div>
 
-          {/* Gallery button */}
-          <button
-            onClick={onGallery}
-            className="p-3 glass rounded-xl hover:bg-secondary/50 transition-colors"
-          >
-            <Image className="w-5 h-5 text-foreground" />
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Settings button */}
+            <button
+              onClick={onOpenSettings}
+              className="p-3 glass rounded-xl hover:bg-secondary/50 transition-colors"
+            >
+              <Settings className="w-5 h-5 text-foreground" />
+            </button>
+
+            {/* Gallery button */}
+            <button
+              onClick={onGallery}
+              className="p-3 glass rounded-xl hover:bg-secondary/50 transition-colors"
+            >
+              <Image className="w-5 h-5 text-foreground" />
+            </button>
+          </div>
+        </motion.div>
+
+        {/* Archetype indicator */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 glass px-4 py-2 rounded-full z-10"
+        >
+          <span className="text-xs text-muted-foreground capitalize">
+            {settings.archetype} • {settings.iterations} iterações
+          </span>
         </motion.div>
 
         {/* Face guide */}
@@ -140,15 +202,21 @@ const CameraScreen = ({ onCapture, onGallery }: CameraScreenProps) => {
         {/* Camera controls */}
         <div className="flex items-center justify-center gap-8">
           {/* Flip camera */}
-          <button className="p-4 glass rounded-full hover:bg-secondary/50 transition-colors">
+          <motion.button
+            onClick={handleFlipCamera}
+            className="p-4 glass rounded-full hover:bg-secondary/50 transition-colors"
+            whileTap={{ scale: 0.95, rotate: 180 }}
+            transition={{ type: "spring", stiffness: 300 }}
+          >
             <RotateCcw className="w-6 h-6 text-foreground" />
-          </button>
+          </motion.button>
 
           {/* Capture button */}
           <motion.button
             onClick={handleCapture}
             className="relative w-20 h-20"
             whileTap={{ scale: 0.95 }}
+            disabled={isCapturing}
           >
             {/* Outer ring */}
             <div className="absolute inset-0 rounded-full border-4 border-foreground/80" />
