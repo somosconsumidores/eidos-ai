@@ -62,11 +62,6 @@
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   }
 
-  html.camera-preview-active,
-  body.camera-preview-active,
-  #root.camera-preview-active {
-    background-color: transparent !important;
-  }
 }
 
 @layer components {
