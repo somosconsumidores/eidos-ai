@@ -1,6 +1,8 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
-import { RefreshCw, Check, Sparkles, Sliders } from "lucide-react";
+import { useState, useEffect } from "react";
+import { RefreshCw, Check, Sparkles, Sliders, Camera as CameraIcon } from "lucide-react";
+import { Camera, CameraResultType, CameraSource, CameraDirection } from "@capacitor/camera";
+import { Capacitor } from "@capacitor/core";
 
 interface CalibrationScreenProps {
   onComplete: (iterations: number, archetype: "classic" | "editorial" | "natural") => void;
@@ -19,9 +21,64 @@ const CalibrationScreen = ({ onComplete, initialArchetype = "natural", onOpenSet
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedArchetype, setSelectedArchetype] = useState<"classic" | "editorial" | "natural">(initialArchetype);
   const [showLocalSettings, setShowLocalSettings] = useState(false);
+  const [templateImage, setTemplateImage] = useState<string | null>(null);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [permissionStatus, setPermissionStatus] = useState<string>("checking...");
+
+  const isNative = Capacitor.isNativePlatform();
+
+  useEffect(() => {
+    const checkPermissions = async () => {
+      try {
+        const status = await Camera.checkPermissions();
+        setPermissionStatus(status.camera);
+      } catch {
+        setPermissionStatus("error");
+      }
+    };
+    checkPermissions();
+  }, []);
+
+  const handleCaptureTemplate = async () => {
+    setIsCapturing(true);
+    try {
+      // Request permissions first
+      const permissions = await Camera.requestPermissions({ permissions: ["camera"] });
+      setPermissionStatus(permissions.camera);
+
+      if (permissions.camera === "denied") {
+        alert("Permissão de câmera negada. Por favor, habilite nas Configurações do dispositivo.");
+        setIsCapturing(false);
+        return;
+      }
+
+      const photo = await Camera.getPhoto({
+        quality: 90,
+        allowEditing: false,
+        resultType: CameraResultType.Base64,
+        source: CameraSource.Camera,
+        direction: CameraDirection.Front,
+        correctOrientation: true,
+        saveToGallery: false,
+      });
+
+      if (photo.base64String) {
+        const imageData = `data:image/${photo.format || "jpeg"};base64,${photo.base64String}`;
+        setTemplateImage(imageData);
+      }
+    } catch (error: unknown) {
+      const err = error as { message?: string };
+      if (!err.message?.includes("User cancelled")) {
+        console.error("Erro ao capturar template:", error);
+        alert("Erro ao capturar foto. Tente novamente.");
+      }
+    } finally {
+      setIsCapturing(false);
+    }
+  };
 
   const handleUpdate = () => {
-    if (isProcessing) return;
+    if (isProcessing || !templateImage) return;
     setIsProcessing(true);
 
     setTimeout(() => {
@@ -47,6 +104,78 @@ const CalibrationScreen = ({ onComplete, initialArchetype = "natural", onOpenSet
 
   const filterString = getFilterString();
 
+  // Step 1: Capture template selfie
+  if (!templateImage) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col relative overflow-hidden">
+        {/* Background */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <motion.div
+            className="absolute -top-1/2 left-1/2 -translate-x-1/2 w-[800px] h-[800px] rounded-full aurora-gradient opacity-5 blur-3xl"
+            animate={{ scale: [1, 1.1, 1] }}
+            transition={{ duration: 10, repeat: Infinity }}
+          />
+        </div>
+
+        {/* Debug badge */}
+        <div className="absolute top-4 right-4 z-50">
+          <div className="glass px-3 py-1.5 rounded-lg text-xs text-muted-foreground">
+            {isNative ? "📱 Native" : "🌐 Web"} | cam: {permissionStatus}
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 flex flex-col items-center justify-center px-6">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center max-w-sm"
+          >
+            <div className="w-24 h-24 mx-auto mb-6 rounded-full aurora-gradient flex items-center justify-center aurora-glow">
+              <CameraIcon className="w-10 h-10 text-white" />
+            </div>
+            
+            <h1 className="text-2xl font-semibold text-foreground mb-3">
+              Capturar Bio-Template
+            </h1>
+            
+            <p className="text-muted-foreground mb-8">
+              Tire uma selfie para iniciar a calibração do seu padrão único de beleza.
+            </p>
+
+            <motion.button
+              onClick={handleCaptureTemplate}
+              disabled={isCapturing}
+              className="w-full py-5 aurora-gradient rounded-2xl flex items-center justify-center gap-3 disabled:opacity-50 aurora-glow"
+              whileTap={{ scale: 0.98 }}
+            >
+              {isCapturing ? (
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                >
+                  <Sparkles className="w-5 h-5 text-white" />
+                </motion.div>
+              ) : (
+                <CameraIcon className="w-5 h-5 text-white" />
+              )}
+              <span className="text-white font-semibold text-lg">
+                {isCapturing ? "Abrindo câmera..." : "Capturar Selfie"}
+              </span>
+            </motion.button>
+
+            {!isNative && (
+              <p className="text-xs text-muted-foreground mt-4">
+                ⚠️ Permissões nativas só aparecem no app iOS/Android
+              </p>
+            )}
+          </motion.div>
+        </div>
+      </div>
+    );
+  }
+
+  // Step 2: Iterate on template
   return (
     <div className="min-h-screen bg-background flex flex-col relative overflow-hidden">
       {/* Background */}
@@ -127,10 +256,10 @@ const CalibrationScreen = ({ onComplete, initialArchetype = "natural", onOpenSet
           {/* Glass frame */}
           <div className="absolute inset-0 glass rounded-3xl z-10 pointer-events-none" />
 
-          {/* Image */}
+          {/* Image - now using captured template */}
           <motion.img
-            src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&h=800&fit=crop&crop=face"
-            alt="Portrait for calibration"
+            src={templateImage}
+            alt="Your bio-template"
             className="w-full h-full object-cover"
             style={{ filter: filterString }}
             animate={isProcessing ? { scale: [1, 1.02, 1] } : {}}
