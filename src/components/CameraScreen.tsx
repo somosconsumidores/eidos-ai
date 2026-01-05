@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { Camera, RotateCcw, Zap, Image, Settings } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { Camera as CapacitorCamera, CameraResultType, CameraSource, CameraDirection } from "@capacitor/camera";
 import type { Photo, UserSettings } from "@/hooks/usePhotoStorage";
 import { getEidosFilter } from "@/hooks/usePhotoStorage";
 
@@ -12,43 +13,60 @@ interface CameraScreenProps {
   onOpenSettings: () => void;
 }
 
-const sampleImages = [
-  "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&h=1200&fit=crop&crop=face",
-  "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=800&h=1200&fit=crop&crop=face",
-  "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=800&h=1200&fit=crop&crop=face",
-];
+const fallbackImage = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&h=1200&fit=crop&crop=face";
 
 const CameraScreen = ({ onCapture, onGallery, settings, onOpenSettings }: CameraScreenProps) => {
   const [eidosMode, setEidosMode] = useState(true);
   const [isCapturing, setIsCapturing] = useState(false);
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [cameraDirection, setCameraDirection] = useState<CameraDirection>(CameraDirection.Front);
 
-  const currentImage = sampleImages[currentImageIndex];
+  const currentImage = previewImage || fallbackImage;
   const eidosFilter = getEidosFilter(settings.archetype, settings.iterations);
 
-  const handleCapture = () => {
+  const handleCapture = async () => {
     setIsCapturing(true);
     
-    // Flash effect and save
-    setTimeout(() => {
-      const newPhoto: Omit<Photo, "id" | "timestamp"> = {
-        originalUrl: currentImage,
-        archetype: settings.archetype,
-        iterations: settings.iterations,
-        eidosMode,
-      };
-      
-      toast.success("Foto capturada!", {
-        description: `Arquétipo: ${settings.archetype}`,
+    try {
+      const photo = await CapacitorCamera.getPhoto({
+        quality: 90,
+        allowEditing: false,
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Camera,
+        direction: cameraDirection,
+        correctOrientation: true,
       });
-      
+
+      if (photo.dataUrl) {
+        setPreviewImage(photo.dataUrl);
+        
+        const newPhoto: Omit<Photo, "id" | "timestamp"> = {
+          originalUrl: photo.dataUrl,
+          archetype: settings.archetype,
+          iterations: settings.iterations,
+          eidosMode,
+        };
+        
+        toast.success("Foto capturada!", {
+          description: `Arquétipo: ${settings.archetype}`,
+        });
+        
+        onCapture(newPhoto);
+      }
+    } catch (error) {
+      console.error("Camera error:", error);
+      toast.error("Erro ao capturar foto", {
+        description: "Verifique as permissões da câmera",
+      });
+    } finally {
       setIsCapturing(false);
-      onCapture(newPhoto);
-    }, 500);
+    }
   };
 
   const handleFlipCamera = () => {
-    setCurrentImageIndex((prev) => (prev + 1) % sampleImages.length);
+    setCameraDirection(prev => 
+      prev === CameraDirection.Front ? CameraDirection.Rear : CameraDirection.Front
+    );
     toast("Câmera alternada", { icon: "🔄" });
   };
 
