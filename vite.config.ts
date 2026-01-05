@@ -15,4 +15,14 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      external: [
+        "@capacitor-community/camera-preview",
+        "@capacitor/camera",
+        "@capacitor/splash-screen",
+        "@capacitor/core",
+      ],
+    },
+  },
 }));
