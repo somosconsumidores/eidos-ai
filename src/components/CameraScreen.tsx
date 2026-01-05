@@ -1,8 +1,9 @@
 import { motion } from "framer-motion";
-import { Camera, RotateCcw, Zap, Image, Settings } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { Camera as CameraIcon, RotateCcw, Zap, Image, Settings } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { CameraPreview, CameraPreviewOptions } from "@capacitor-community/camera-preview";
+import { Camera as CapCamera } from "@capacitor/camera";
+import { CameraPreview, type CameraPreviewOptions } from "@capacitor-community/camera-preview";
 import type { Photo, UserSettings } from "@/hooks/usePhotoStorage";
 import { getEidosFilter } from "@/hooks/usePhotoStorage";
 
@@ -25,11 +26,26 @@ const CameraScreen = ({ onCapture, onGallery, settings, onOpenSettings }: Camera
 
   const eidosFilter = getEidosFilter(settings.archetype, settings.iterations);
 
+  const setCameraPreviewTransparency = (enabled: boolean) => {
+    const method: "add" | "remove" = enabled ? "add" : "remove";
+    document.documentElement.classList[method]("camera-preview-active");
+    document.body.classList[method]("camera-preview-active");
+    document.getElementById("root")?.classList[method]("camera-preview-active");
+  };
+
   const startCamera = async () => {
     try {
+      const perms = await CapCamera.requestPermissions({ permissions: ["camera"] });
+      if (perms.camera !== "granted") {
+        toast.error("Permissão de câmera negada", {
+          description: "Ative em Ajustes > Privacidade > Câmera",
+        });
+        return;
+      }
+
       const cameraPreviewOptions: CameraPreviewOptions = {
         position: isFrontCamera ? "front" : "rear",
-        parent: "camera-preview",
+        parent: "cameraPreview",
         className: "camera-preview-element",
         toBack: true,
         storeToFile: false,
@@ -43,7 +59,7 @@ const CameraScreen = ({ onCapture, onGallery, settings, onOpenSettings }: Camera
     } catch (error) {
       console.error("Failed to start camera:", error);
       toast.error("Erro ao iniciar câmera", {
-        description: "Verifique as permissões",
+        description: "Verifique as permissões e tente novamente",
       });
     }
   };
@@ -58,9 +74,15 @@ const CameraScreen = ({ onCapture, onGallery, settings, onOpenSettings }: Camera
   };
 
   useEffect(() => {
-    startCamera();
+    setCameraPreviewTransparency(true);
+    const t = window.setTimeout(() => {
+      void startCamera();
+    }, 0);
+
     return () => {
-      stopCamera();
+      window.clearTimeout(t);
+      void stopCamera();
+      setCameraPreviewTransparency(false);
     };
   }, []);
 
@@ -110,12 +132,12 @@ const CameraScreen = ({ onCapture, onGallery, settings, onOpenSettings }: Camera
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col relative overflow-hidden">
+    <div className="min-h-screen bg-background/0 flex flex-col relative overflow-hidden">
       {/* Camera viewport */}
       <div className="flex-1 relative" ref={cameraContainerRef}>
         {/* Native camera preview container */}
-        <div 
-          id="camera-preview" 
+        <div
+          id="cameraPreview"
           className="absolute inset-0 z-0"
           style={{
             filter: eidosMode ? eidosFilter : "none",
@@ -299,7 +321,7 @@ const CameraScreen = ({ onCapture, onGallery, settings, onOpenSettings }: Camera
               }`}
               animate={isCapturing ? { scale: 0.8 } : { scale: 1 }}
             />
-            <Camera className="absolute inset-0 m-auto w-8 h-8 text-white z-10" />
+            <CameraIcon className="absolute inset-0 m-auto w-8 h-8 text-white z-10" />
           </motion.button>
 
           {/* Placeholder for symmetry */}
