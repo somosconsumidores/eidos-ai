@@ -1,9 +1,8 @@
-import { motion } from "framer-motion";
-import { Camera as CameraIcon, RotateCcw, Zap, Image, Settings } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Camera as CameraIcon, RotateCcw, Zap, Image, Settings, Check, X } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { Camera as CapCamera } from "@capacitor/camera";
-import { CameraPreview, type CameraPreviewOptions } from "@capacitor-community/camera-preview";
+import { Camera, CameraResultType, CameraSource, CameraDirection } from "@capacitor/camera";
 import type { Photo, UserSettings } from "@/hooks/usePhotoStorage";
 import { getEidosFilter } from "@/hooks/usePhotoStorage";
 
@@ -14,189 +13,236 @@ interface CameraScreenProps {
   onOpenSettings: () => void;
 }
 
-const fallbackImage = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&h=1200&fit=crop&crop=face";
-
 const CameraScreen = ({ onCapture, onGallery, settings, onOpenSettings }: CameraScreenProps) => {
   const [eidosMode, setEidosMode] = useState(true);
   const [isCapturing, setIsCapturing] = useState(false);
-  const [cameraStarted, setCameraStarted] = useState(false);
-  const [isFrontCamera, setIsFrontCamera] = useState(true);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const cameraContainerRef = useRef<HTMLDivElement>(null);
+  const [isFrontCamera, setIsFrontCamera] = useState(true);
 
   const eidosFilter = getEidosFilter(settings.archetype, settings.iterations);
 
-  const setCameraPreviewTransparency = (enabled: boolean) => {
-    const method: "add" | "remove" = enabled ? "add" : "remove";
-    document.documentElement.classList[method]("camera-preview-active");
-    document.body.classList[method]("camera-preview-active");
-    document.getElementById("root")?.classList[method]("camera-preview-active");
-  };
-
-  const startCamera = async () => {
-    try {
-      const perms = await CapCamera.requestPermissions({ permissions: ["camera"] });
-      if (perms.camera !== "granted") {
-        toast.error("Permissão de câmera negada", {
-          description: "Ative em Ajustes > Privacidade > Câmera",
-        });
-        return;
-      }
-
-      const cameraPreviewOptions: CameraPreviewOptions = {
-        position: isFrontCamera ? "front" : "rear",
-        parent: "cameraPreview",
-        className: "camera-preview-element",
-        toBack: true,
-        storeToFile: false,
-        disableAudio: true,
-        enableHighResolution: true,
-        lockAndroidOrientation: true,
-      };
-
-      await CameraPreview.start(cameraPreviewOptions);
-      setCameraStarted(true);
-    } catch (error) {
-      console.error("Failed to start camera:", error);
-      toast.error("Erro ao iniciar câmera", {
-        description: "Verifique as permissões e tente novamente",
-      });
-    }
-  };
-
-  const stopCamera = async () => {
-    try {
-      await CameraPreview.stop();
-      setCameraStarted(false);
-    } catch (error) {
-      console.error("Failed to stop camera:", error);
-    }
-  };
-
-  useEffect(() => {
-    setCameraPreviewTransparency(true);
-    const t = window.setTimeout(() => {
-      void startCamera();
-    }, 0);
-
-    return () => {
-      window.clearTimeout(t);
-      void stopCamera();
-      setCameraPreviewTransparency(false);
-    };
-  }, []);
-
-  const handleCapture = async () => {
+  const handleTakePhoto = async () => {
     setIsCapturing(true);
-    
+
     try {
-      const result = await CameraPreview.capture({
+      const photo = await Camera.getPhoto({
         quality: 90,
+        allowEditing: false,
+        resultType: CameraResultType.Base64,
+        source: CameraSource.Camera,
+        direction: isFrontCamera ? CameraDirection.Front : CameraDirection.Rear,
+        correctOrientation: true,
+        saveToGallery: false,
       });
 
-      if (result.value) {
-        const imageData = `data:image/jpeg;base64,${result.value}`;
+      if (photo.base64String) {
+        const imageData = `data:image/${photo.format || "jpeg"};base64,${photo.base64String}`;
         setCapturedImage(imageData);
-        
-        const newPhoto: Omit<Photo, "id" | "timestamp"> = {
-          originalUrl: imageData,
-          archetype: settings.archetype,
-          iterations: settings.iterations,
-          eidosMode,
-        };
-        
-        toast.success("Foto capturada!", {
-          description: `Arquétipo: ${settings.archetype}`,
-        });
-        
-        onCapture(newPhoto);
       }
-    } catch (error) {
-      console.error("Capture error:", error);
-      toast.error("Erro ao capturar foto", {
-        description: "Tente novamente",
-      });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // User cancelled - don't show error
+      if (errorMessage.includes("cancelled") || errorMessage.includes("canceled")) {
+        console.log("Camera cancelled by user");
+      } else {
+        console.error("Camera error:", error);
+        toast.error("Erro ao acessar câmera", {
+          description: "Verifique as permissões em Ajustes > Privacidade > Câmera",
+        });
+      }
     } finally {
       setIsCapturing(false);
     }
   };
 
-  const handleFlipCamera = async () => {
-    try {
-      await CameraPreview.flip();
-      setIsFrontCamera(prev => !prev);
-      toast("Câmera alternada", { icon: "🔄" });
-    } catch (error) {
-      console.error("Flip error:", error);
-    }
+  const handleSavePhoto = () => {
+    if (!capturedImage) return;
+
+    const newPhoto: Omit<Photo, "id" | "timestamp"> = {
+      originalUrl: capturedImage,
+      archetype: settings.archetype,
+      iterations: settings.iterations,
+      eidosMode,
+    };
+
+    toast.success("Foto salva!", {
+      description: `Arquétipo: ${settings.archetype}`,
+    });
+
+    onCapture(newPhoto);
+    setCapturedImage(null);
   };
 
-  return (
-    <div className="min-h-screen bg-background/0 flex flex-col relative overflow-hidden">
-      {/* Camera viewport */}
-      <div className="flex-1 relative" ref={cameraContainerRef}>
-        {/* Native camera preview container */}
-        <div
-          id="cameraPreview"
-          className="absolute inset-0 z-0"
-          style={{
-            filter: eidosMode ? eidosFilter : "none",
-            transition: "filter 0.5s ease",
-          }}
-        />
+  const handleRetake = () => {
+    setCapturedImage(null);
+  };
 
-        {/* Fallback/captured image overlay */}
-        {(!cameraStarted || capturedImage) && (
+  const handleFlipCamera = () => {
+    setIsFrontCamera(prev => !prev);
+    toast("Câmera alternada", { icon: "🔄" });
+  };
+
+  // Preview screen after capturing
+  if (capturedImage) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col relative overflow-hidden">
+        {/* Preview image */}
+        <div className="flex-1 relative">
+          <motion.img
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            src={capturedImage}
+            alt="Foto capturada"
+            className="w-full h-full object-cover"
+            style={{
+              filter: eidosMode ? eidosFilter : "none",
+              transition: "filter 0.3s ease",
+            }}
+          />
+
+          {/* Eidos overlay effect */}
+          {eidosMode && (
+            <motion.div
+              className="absolute inset-0 pointer-events-none"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+            >
+              <div
+                className="absolute inset-0"
+                style={{
+                  background: "radial-gradient(circle at center, transparent 40%, rgba(0,0,0,0.3) 100%)",
+                }}
+              />
+              <div
+                className="absolute inset-0 aurora-gradient opacity-5"
+                style={{ mixBlendMode: "overlay" }}
+              />
+            </motion.div>
+          )}
+
+          {/* Top controls */}
           <motion.div
-            className="absolute inset-0 z-5"
-            animate={isCapturing ? { opacity: [1, 0, 1] } : {}}
-            transition={{ duration: 0.3 }}
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="absolute top-12 left-0 right-0 px-6 flex items-center justify-between z-20"
           >
-            <img
-              src={capturedImage || fallbackImage}
-              alt="Camera preview"
-              className="w-full h-full object-cover"
-              style={{
-                filter: eidosMode ? eidosFilter : "none",
-                transform: eidosMode ? "scale(1.02)" : "scale(1)",
-                transition: "all 0.5s ease",
-              }}
-            />
+            <div className="glass px-4 py-2 rounded-full">
+              <span className="text-sm font-medium text-foreground">
+                {eidosMode ? (
+                  <span className="flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-aurora-mid" />
+                    Eidos Mode
+                  </span>
+                ) : (
+                  "Original"
+                )}
+              </span>
+            </div>
           </motion.div>
-        )}
 
-        {/* Eidos mode overlay effect */}
-        {eidosMode && (
+          {/* Archetype indicator */}
           <motion.div
-            className="absolute inset-0 pointer-events-none z-10"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 glass px-4 py-2 rounded-full z-20"
           >
-            {/* Subtle vignette */}
-            <div
-              className="absolute inset-0"
-              style={{
-                background:
-                  "radial-gradient(circle at center, transparent 40%, rgba(0,0,0,0.3) 100%)",
-              }}
-            />
-            {/* Aurora tint */}
-            <div
-              className="absolute inset-0 aurora-gradient opacity-5"
-              style={{ mixBlendMode: "overlay" }}
-            />
+            <span className="text-xs text-muted-foreground capitalize">
+              {settings.archetype} • {settings.iterations} iterações
+            </span>
           </motion.div>
-        )}
+        </div>
 
-        {/* Flash effect */}
-        {isCapturing && (
+        {/* Bottom controls */}
+        <motion.div
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="relative z-20 pb-12 pt-6 px-6 bg-background/80 backdrop-blur-lg"
+        >
+          {/* Eidos toggle */}
+          <div className="flex justify-center mb-8">
+            <button
+              onClick={() => setEidosMode(!eidosMode)}
+              className={`px-8 py-3 rounded-full font-medium transition-all ${
+                eidosMode
+                  ? "aurora-gradient text-white aurora-glow"
+                  : "glass text-foreground"
+              }`}
+            >
+              {eidosMode ? "Eidos Ativo" : "Ativar Eidos"}
+            </button>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex items-center justify-center gap-8">
+            {/* Retake */}
+            <motion.button
+              onClick={handleRetake}
+              className="p-4 glass rounded-full hover:bg-destructive/20 transition-colors"
+              whileTap={{ scale: 0.95 }}
+            >
+              <X className="w-6 h-6 text-destructive" />
+            </motion.button>
+
+            {/* Save */}
+            <motion.button
+              onClick={handleSavePhoto}
+              className="relative w-20 h-20"
+              whileTap={{ scale: 0.95 }}
+            >
+              <div className="absolute inset-0 rounded-full border-4 border-primary/80" />
+              <motion.div
+                className="absolute inset-2 rounded-full aurora-gradient"
+                animate={{ scale: [1, 1.05, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              />
+              <Check className="absolute inset-0 m-auto w-8 h-8 text-white z-10" />
+            </motion.button>
+
+            {/* Placeholder for symmetry */}
+            <div className="p-4 w-14 h-14" />
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // Main camera screen
+  return (
+    <div className="min-h-screen bg-background flex flex-col relative overflow-hidden">
+      {/* Camera placeholder */}
+      <div className="flex-1 relative flex items-center justify-center">
+        {/* Background gradient */}
+        <div className="absolute inset-0 bg-gradient-to-b from-background via-muted/30 to-background" />
+
+        {/* Face guide */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <motion.div
-            className="absolute inset-0 bg-white z-30"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: [0, 1, 0] }}
-            transition={{ duration: 0.3 }}
+            className="w-64 h-80 border-2 border-foreground/20 rounded-[40%]"
+            animate={{
+              borderColor: eidosMode
+                ? "hsl(250 100% 65% / 0.4)"
+                : "hsl(0 0% 100% / 0.2)",
+              scale: [1, 1.02, 1],
+            }}
+            transition={{ duration: 3, repeat: Infinity }}
           />
-        )}
+        </div>
+
+        {/* Center instruction */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="z-10 text-center px-8"
+        >
+          <CameraIcon className="w-16 h-16 text-aurora-mid mx-auto mb-4 opacity-60" />
+          <h2 className="text-xl font-semibold text-foreground mb-2">
+            Toque para tirar selfie
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            A câmera nativa do iOS será aberta
+          </p>
+        </motion.div>
 
         {/* Top controls */}
         <motion.div
@@ -204,7 +250,6 @@ const CameraScreen = ({ onCapture, onGallery, settings, onOpenSettings }: Camera
           animate={{ opacity: 1, y: 0 }}
           className="absolute top-12 left-0 right-0 px-6 flex items-center justify-between z-20"
         >
-          {/* Mode indicator */}
           <div className="glass px-4 py-2 rounded-full">
             <span className="text-sm font-medium text-foreground">
               {eidosMode ? (
@@ -219,9 +264,13 @@ const CameraScreen = ({ onCapture, onGallery, settings, onOpenSettings }: Camera
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Camera status */}
-            <div className={`w-2 h-2 rounded-full ${cameraStarted ? "bg-green-500" : "bg-red-500"}`} />
-            
+            {/* Camera direction indicator */}
+            <div className="glass px-3 py-1 rounded-full">
+              <span className="text-xs text-muted-foreground">
+                {isFrontCamera ? "Frontal" : "Traseira"}
+              </span>
+            </div>
+
             {/* Settings button */}
             <button
               onClick={onOpenSettings}
@@ -250,27 +299,6 @@ const CameraScreen = ({ onCapture, onGallery, settings, onOpenSettings }: Camera
             {settings.archetype} • {settings.iterations} iterações
           </span>
         </motion.div>
-
-        {/* Face guide */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-15">
-          <motion.div
-            className="w-64 h-80 border-2 border-foreground/20 rounded-[40%]"
-            animate={{
-              borderColor: eidosMode
-                ? "hsl(250 100% 65% / 0.4)"
-                : "hsl(0 0% 100% / 0.2)",
-            }}
-          />
-        </div>
-
-        {/* Grid overlay */}
-        <div className="absolute inset-0 pointer-events-none opacity-20 z-15">
-          <div className="absolute inset-0 grid grid-cols-3 grid-rows-3">
-            {[...Array(9)].map((_, i) => (
-              <div key={i} className="border border-foreground/10" />
-            ))}
-          </div>
-        </div>
       </div>
 
       {/* Bottom controls */}
@@ -307,14 +335,12 @@ const CameraScreen = ({ onCapture, onGallery, settings, onOpenSettings }: Camera
 
           {/* Capture button */}
           <motion.button
-            onClick={handleCapture}
+            onClick={handleTakePhoto}
             className="relative w-20 h-20"
             whileTap={{ scale: 0.95 }}
             disabled={isCapturing}
           >
-            {/* Outer ring */}
             <div className="absolute inset-0 rounded-full border-4 border-foreground/80" />
-            {/* Inner button */}
             <motion.div
               className={`absolute inset-2 rounded-full ${
                 eidosMode ? "aurora-gradient" : "bg-foreground"
